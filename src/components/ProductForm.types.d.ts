@@ -1,0 +1,24 @@
+import type { Product, ProductCategory } from "@/lib/types";
+
+export interface ProductFormProps {
+  product?: Product;
+  storeCurrency: string;
+  categories: ProductCategory[];
+}
+
+export interface GitHubRepositoryOption {
+  id: string;
+  owner: string;
+  name: string;
+  fullName: string;
+  url: string;
+  disabled?: boolean;
+  disabledReason?: string;
+}
+
+export interface GitHubRepositoriesResponse {
+  connected: boolean;
+  login?: string;
+  repositories: GitHubRepositoryOption[];
+  error?: string;
+}

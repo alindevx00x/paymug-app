@@ -1,0 +1,95 @@
+"use client";
+import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  MinusSignIcon,
+  PlusSignIcon,
+} from "@hugeicons/core-free-icons";
+
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useState } from "react";
+import {
+  defaultExtraSeatLabel,
+  extraSeatsCustomKey,
+  maxExtraSeats,
+} from "@/lib/extra-seats";
+import type { ExtraSeatsPickerProps } from "./ExtraSeatsPicker.types";
+
+const buttonClass =
+  "grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-full text-muted transition bg-[#f0f0f5] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent";
+
+export function ExtraSeatsPicker({
+  extraSeats,
+  label,
+  min = 0,
+  max = maxExtraSeats,
+  onChange,
+}: ExtraSeatsPickerProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [draft, setDraft] = useState(String(extraSeats));
+
+  function commit(value: number) {
+    const next = Math.min(max, Math.max(min, Math.floor(value) || 0));
+    setDraft(String(next));
+    if (next === extraSeats) return;
+    if (onChange) {
+      onChange(next);
+      return;
+    }
+    const params = new URLSearchParams(searchParams.toString());
+    const queryKey = `[custom][${extraSeatsCustomKey}]`;
+    if (next > 0) params.set(queryKey, String(next));
+    else params.delete(queryKey);
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+
+      <label htmlFor="extra-seats" className="text-muted">
+        {label || defaultExtraSeatLabel}
+      </label>
+
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          aria-label="Remove an extra seat"
+          className={buttonClass}
+          disabled={extraSeats <= min}
+          onClick={() => commit(extraSeats - 1)}
+        >
+          <HugeiconsIcon icon={MinusSignIcon} size={14} strokeWidth={2} />
+        </button>
+        <input
+          id="extra-seats"
+          aria-label={label || defaultExtraSeatLabel}
+          type="number"
+          inputMode="numeric"
+          min={min}
+          max={max}
+          step={1}
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={() => commit(Number(draft))}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              commit(Number(draft));
+            }
+          }}
+          className="h-7 w-5 bg-transparent text-center text-sm font-medium outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+        />
+        <button
+          type="button"
+          aria-label="Add an extra seat"
+          className={buttonClass}
+          disabled={extraSeats >= max}
+          onClick={() => commit(extraSeats + 1)}
+        >
+          <HugeiconsIcon icon={PlusSignIcon} size={14} strokeWidth={2} />
+        </button>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,354 @@
+"use client";
+import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  Alert02Icon,
+  Download01Icon,
+  RefreshIcon,
+  SquareArrowUpRightIcon,
+  Tick02Icon,
+  Upload01Icon,
+} from "@hugeicons/core-free-icons";
+
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { Alert, Button } from "@/components/ui";
+import type {
+  AboutPanelProps,
+  AboutUpdateResponse,
+  AboutUpdateStartResponse,
+} from "./AboutPanel.types";
+import {
+  downloadAboutBackup,
+  uploadAboutBackup,
+} from "./about-backup.utils";
+
+export function AboutPanel({ status }: AboutPanelProps) {
+  const router = useRouter();
+  const [checking, setChecking] = useState(false);
+  const [update, setUpdate] = useState<AboutUpdateResponse | null>(null);
+  const [updating, setUpdating] = useState(false);
+  const [updateStart, setUpdateStart] = useState<AboutUpdateStartResponse | null>(null);
+  const [backupFile, setBackupFile] = useState<File | null>(null);
+  const [preserveIds, setPreserveIds] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [backupMessage, setBackupMessage] = useState<{
+    variant: "error" | "success" | "info";
+    text: string;
+  } | null>(null);
+  const missing = status.configurations.filter((item) => !item.configured);
+  const missingRequired = missing.filter((item) => item.required);
+
+  async function checkForUpdate() {
+    setChecking(true);
+    setUpdate(null);
+    try {
+      const response = await fetch("/api/about/update", { cache: "no-store" });
+      const data = (await response.json()) as AboutUpdateResponse;
+      if (!response.ok) throw new Error(data.error || "Could not check for updates");
+      setUpdate(data);
+    } catch (error) {
+      setUpdate({
+        error: error instanceof Error ? error.message : "Could not check for updates",
+      });
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  async function startUpdate() {
+    setUpdating(true);
+    setUpdateStart(null);
+    try {
+      const response = await fetch("/api/about/update", { method: "POST" });
+      const data = (await response.json()) as AboutUpdateStartResponse;
+      if (!response.ok) throw new Error(data.error || "Could not start the update");
+      setUpdateStart(data);
+    } catch (error) {
+      setUpdateStart({
+        error: error instanceof Error ? error.message : "Could not start the update",
+      });
+    } finally {
+      setUpdating(false);
+    }
+  }
+
+  async function exportBackup() {
+    setExporting(true);
+    setBackupMessage(null);
+    try {
+      await downloadAboutBackup();
+      setBackupMessage({ variant: "success", text: "Store backup downloaded." });
+    } catch (error) {
+      setBackupMessage({
+        variant: "error",
+        text: error instanceof Error ? error.message : "Could not export store data",
+      });
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function importBackup() {
+    if (!backupFile) return;
+    if (
+      preserveIds &&
+      !window.confirm(
+        "Preserving IDs will update existing records that have matching IDs. Continue?",
+      )
+    ) {
+      return;
+    }
+    setImporting(true);
+    setBackupMessage(null);
+    try {
+      const result = await uploadAboutBackup(backupFile, preserveIds);
+      setBackupMessage({
+        variant: "success",
+        text: `Imported ${result.products || 0} products, ${result.orders || 0} orders, ${result.featureRecords || 0} feature records, and ${result.customers || 0} customer accounts into the current store${result.reusedCustomers ? ` (${result.reusedCustomers} existing customers reused)` : ""}.`,
+      });
+      router.refresh();
+    } catch (error) {
+      setBackupMessage({
+        variant: "error",
+        text: error instanceof Error ? error.message : "Could not import backup",
+      });
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <section className="rounded-2xl border border-[#e8e8ee] bg-white p-5 sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-5">
+          <div>
+            <p className="text-sm font-semibold">Paymug version</p>
+            <p className="mt-2 text-3xl font-semibold tracking-[-0.04em]">
+              v{status.version}
+            </p>
+          </div>
+          <Button type="button" onClick={() => void checkForUpdate()} disabled={checking}>
+            <HugeiconsIcon icon={RefreshIcon} size={16} className={checking ? "animate-spin" : ""} />
+            {checking ? "Checking…" : "Check for update"}
+          </Button>
+        </div>
+
+        {update?.error && <div className="mt-5"><Alert>{update.error}</Alert></div>}
+        {update?.latestVersion && (
+          <div
+            className={`mt-5 rounded-xl border p-4 ${
+              update.isLatest
+                ? "border-emerald-200 bg-emerald-50"
+                : "border-amber-200 bg-amber-50"
+            }`}
+          >
+            <div className="flex items-start gap-3">
+              {update.isLatest ? (
+                <HugeiconsIcon icon={Tick02Icon} size={20} className="mt-0.5 shrink-0 text-emerald-700" />
+              ) : (
+                <HugeiconsIcon icon={Alert02Icon} size={20} className="mt-0.5 shrink-0 text-amber-700" />
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold">
+                  {update.isLatest
+                    ? "Paymug is up to date"
+                    : "A newer Paymug version is available"}
+                </p>
+                <p className="mt-1 text-sm leading-6 text-[#696978]">
+                  {update.isLatest
+                    ? `This deployment is running the latest version, v${update.currentVersion}.`
+                    : `Latest version: v${update.latestVersion}. You are currently running v${update.currentVersion}.`}
+                </p>
+                {!update.isLatest && update.configured && (
+                  <Button
+                    type="button"
+                    className="mt-4"
+                    onClick={() => void startUpdate()}
+                    disabled={updating || Boolean(updateStart?.ok)}
+                  >
+                    <HugeiconsIcon icon={RefreshIcon} size={16} className={updating ? "animate-spin" : ""} />
+                    {updating ? "Starting…" : "Update now"}
+                  </Button>
+                )}
+                {!update.isLatest && !update.configured && (
+                  <div className="mt-4 space-y-2 text-sm text-[#696978]">
+                    <p>
+                      Add these Worker variables to update from here, or run the
+                      workflow manually.
+                    </p>
+                    <ul>
+                      {update.configuration?.map((item) => (
+                        <li key={item.name} className="flex items-center gap-2">
+                          <code className="text-xs font-semibold text-[#3f3f49]">{item.name}</code>
+                          <span className={item.configured ? "text-emerald-700" : "text-amber-700"}>
+                            {item.configured ? "Configured" : "Missing"}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                    {update.workflowUrl && (
+                      <a
+                        href={update.workflowUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-accent px-4 text-sm font-semibold text-dark transition hover:bg-accent-hover"
+                      >
+                        Open update workflow <HugeiconsIcon icon={SquareArrowUpRightIcon} size={14} />
+                      </a>
+                    )}
+                  </div>
+                )}
+                {updateStart?.error && <div className="mt-4"><Alert>{updateStart.error}</Alert></div>}
+                {updateStart?.ok && (
+                  <p className="mt-4 text-sm text-emerald-700">
+                    Update started on {updateStart.repository}@{updateStart.ref}. Cloudflare redeploys when the workflow pushes.{" "}
+                    {updateStart.runUrl && (
+                      <a className="font-semibold underline" href={updateStart.runUrl} target="_blank" rel="noreferrer">
+                        View workflow run
+                      </a>
+                    )}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </section>
+
+      <section className="overflow-hidden rounded-2xl border border-[#e8e8ee] bg-white">
+        <div className="border-b border-[#e8e8ee] px-5 py-5 sm:px-6">
+          <h3 className="font-semibold">Store record transfer</h3>
+          <p className="mt-1 text-sm leading-6 text-[#85859d]">
+            Export or import the current store’s products, orders, customers, pages,
+            campaigns, subscriptions, discounts, and affiliate records.
+          </p>
+        </div>
+        <div className="grid gap-0 md:grid-cols-2">
+          <div className="border-b border-[#e8e8ee] p-5 sm:p-6 md:border-b-0 md:border-r">
+            <p className="text-sm font-semibold">Export data</p>
+            <p className="mt-2 text-sm leading-6 text-[#85859d]">
+              Downloads the current store’s records as portable JSON. The store itself, payment credentials, API keys,
+              access tokens, and app-license secrets are excluded. The file contains
+              customer personal data and password hashes, so store it securely.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              className="mt-4"
+              disabled={exporting}
+              onClick={() => void exportBackup()}
+            >
+              <HugeiconsIcon icon={Download01Icon} size={16} />
+              {exporting ? "Exporting…" : "Download backup"}
+            </Button>
+          </div>
+          <div className="p-5 sm:p-6">
+            <p className="text-sm font-semibold">Import data</p>
+            <p className="mt-2 text-sm leading-6 text-[#85859d]">
+              Imports into the current store. All store references are reassigned to
+              the current store ID, and all records use the currently selected test or
+              live mode. Product file metadata and URLs are preserved, but R2 file
+              binaries are not embedded in the JSON backup.
+            </p>
+            <label className="mt-4 block text-sm font-medium text-[#3f3f49]">
+              Backup file
+              <input
+                type="file"
+                accept="application/json,.json"
+                className="mt-2 block w-full rounded-xl border border-[#dedee6] bg-white px-3 py-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-[#f4f4f7] file:px-3 file:py-2 file:text-sm file:font-semibold"
+                onChange={(event) => setBackupFile(event.target.files?.[0] || null)}
+              />
+            </label>
+            <label className="mt-4 flex items-start gap-3 text-sm text-[#696978]">
+              <input
+                type="checkbox"
+                className="mt-1 h-4 w-4 rounded border-[#cfcfd8]"
+                checked={preserveIds}
+                onChange={(event) => setPreserveIds(event.target.checked)}
+              />
+              <span>
+                <span className="block font-semibold text-[#3f3f49]">Preserve IDs</span>
+                Preserve product, order, customer, and feature-record IDs and update
+                matching records. The store ID always remains the current store ID.
+                Leave this off to generate new record IDs and product slugs.
+              </span>
+            </label>
+            <Button
+              type="button"
+              className="mt-4"
+              disabled={!backupFile || importing}
+              onClick={() => void importBackup()}
+            >
+              <HugeiconsIcon icon={Upload01Icon} size={16} />
+              {importing ? "Importing…" : "Import backup"}
+            </Button>
+          </div>
+        </div>
+        {backupMessage && (
+          <div className="border-t border-[#e8e8ee] p-5 sm:px-6">
+            <Alert variant={backupMessage.variant}>{backupMessage.text}</Alert>
+          </div>
+        )}
+      </section>
+
+      <section className="overflow-hidden rounded-2xl border border-[#e8e8ee] bg-white">
+        <div className="border-b border-[#e8e8ee] px-5 py-5 sm:px-6">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 className="font-semibold">Configuration</h3>
+              <p className="mt-1 text-sm text-[#85859d]">
+                Secret values are never displayed—only whether they are available.
+              </p>
+            </div>
+            <span
+              className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                missingRequired.length
+                  ? "bg-red-50 text-red-700"
+                  : missing.length
+                    ? "bg-amber-50 text-amber-700"
+                    : "bg-emerald-50 text-emerald-700"
+              }`}
+            >
+              {missing.length ? `${missing.length} missing` : "All configured"}
+            </span>
+          </div>
+        </div>
+        <div>
+          {status.configurations.map((item) => (
+            <div
+              key={item.id}
+              className={`flex items-start gap-4 border-b border-[#eeeeF2] px-5 py-4 last:border-0 sm:px-6 ${
+                item.configured ? "" : "bg-[#fffdf7]"
+              }`}
+            >
+              <span
+                className={`mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full ${
+                  item.configured
+                    ? "bg-emerald-50 text-emerald-700"
+                    : "bg-amber-50 text-amber-700"
+                }`}
+              >
+                {item.configured ? <HugeiconsIcon icon={Tick02Icon} size={15} /> : <HugeiconsIcon icon={Alert02Icon} size={15} />}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <code className="text-sm font-semibold text-[#3f3f49]">{item.label}</code>
+                  {!item.required && (
+                    <span className="rounded-full bg-[#f4f4f7] px-2 py-0.5 text-[11px] font-medium text-[#85859d]">
+                      Optional
+                    </span>
+                  )}
+                </div>
+                <p className="mt-1 text-sm leading-6 text-[#85859d]">{item.description}</p>
+              </div>
+              <span className={`shrink-0 text-xs font-semibold ${item.configured ? "text-emerald-700" : "text-amber-700"}`}>
+                {item.configured ? "Configured" : "Missing"}
+              </span>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
